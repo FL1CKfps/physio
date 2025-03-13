@@ -11,12 +11,17 @@ const __dirname = dirname(__filename);
 
 dotenv.config();
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+// Initialize Firebase Admin first, before anything else
+let firebaseInitialized = false;
 
-// Initialize Firebase Admin
 try {
+  console.log('Starting Firebase initialization...');
+  console.log('Environment variables check:', {
+    projectId: !!process.env.FIREBASE_PROJECT_ID,
+    privateKeyExists: !!process.env.FIREBASE_PRIVATE_KEY,
+    clientEmailExists: !!process.env.FIREBASE_CLIENT_EMAIL
+  });
+
   const serviceAccount = {
     type: 'service_account',
     project_id: process.env.FIREBASE_PROJECT_ID,
@@ -24,12 +29,65 @@ try {
     client_email: process.env.FIREBASE_CLIENT_EMAIL,
   };
 
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-  });
+  // Check if Firebase is already initialized
+  if (!admin.apps.length) {
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    
+    // Test the connection
+    await admin.app().firestore().collection('test').doc('test').set({
+      timestamp: admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    console.log('Firebase Admin initialized successfully');
+    firebaseInitialized = true;
+  }
 } catch (error) {
   console.error('Firebase initialization error:', error);
+  console.error('Error stack:', error.stack);
+  console.log('Service account details:', {
+    project_id: process.env.FIREBASE_PROJECT_ID,
+    client_email: process.env.FIREBASE_CLIENT_EMAIL,
+    private_key_length: process.env.FIREBASE_PRIVATE_KEY?.length
+  });
+  firebaseInitialized = false;
 }
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// Add Firebase check middleware
+const checkFirebase = (req, res, next) => {
+  if (!firebaseInitialized || !admin.apps.length) {
+    console.error('Firebase check failed:', {
+      firebaseInitialized,
+      appsLength: admin.apps.length
+    });
+    return res.status(503).json({
+      error: 'Firebase services are temporarily unavailable',
+      details: 'Server configuration issue - please try again later'
+    });
+  }
+  next();
+};
+
+// Initialize Google OAuth client
+const client = new OAuth2Client([
+  process.env.GOOGLE_CLIENT_ID, 
+  process.env.ANDROID_CLIENT_ID,
+  process.env.WEB_CLIENT_ID
+]);
+
+// Add more detailed logging middleware
+app.use((req, res, next) => {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] ${req.method} ${req.url}`);
+  console.log('Headers:', req.headers);
+  if (req.body) console.log('Request Body:', JSON.stringify(req.body, null, 2));
+  next();
+});
 
 // Initialize OAuth client
 const oauth2Client = new OAuth2Client({
@@ -38,22 +96,25 @@ const oauth2Client = new OAuth2Client({
   redirectUri: 'https://physio-j6ja.onrender.com/auth/google/callback'
 });
 
-// OAuth flow initialization
+// Initialize OAuth flow
 app.get('/auth/google/init', (req, res) => {
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: 'offline',
-    prompt: 'consent',
+    prompt: 'consent', // Force consent screen
     scope: [
       'https://www.googleapis.com/auth/userinfo.profile',
       'https://www.googleapis.com/auth/userinfo.email'
     ],
+    // Add state parameter for security
     state: Math.random().toString(36).substring(7)
   });
+  
+  console.log('Generated Auth URL:', authUrl); // Debug log
   res.json({ authUrl });
 });
 
-// OAuth callback
-app.get('/auth/google/callback', async (req, res) => {
+// Handle OAuth callback - add Firebase check middleware
+app.get('/auth/google/callback', checkFirebase, async (req, res) => {
   try {
     const { code } = req.query;
     const { tokens } = await oauth2Client.getToken(code);
@@ -83,6 +144,8 @@ app.get('/auth/google/callback', async (req, res) => {
 
     // Create custom token
     const customToken = await admin.auth().createCustomToken(userRecord.uid);
+
+    // Redirect back to app with token
     res.redirect(`physioquantum://auth/callback?token=${customToken}`);
   } catch (error) {
     console.error('OAuth callback error:', error);
@@ -90,12 +153,35 @@ app.get('/auth/google/callback', async (req, res) => {
   }
 });
 
-// Basic health check
+// Health check with Firebase status
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({
+    status: 'ok',
+    firebase: {
+      initialized: firebaseInitialized,
+      appsLength: admin.apps.length
+    }
+  });
+});
+
+// Add a test endpoint
+app.get('/api/test', (req, res) => {
+  const timestamp = new Date().toISOString();
+  console.log(`Test endpoint hit at ${timestamp}`);
+  console.log('Headers:', req.headers);
+  
+  res.json({ 
+    message: 'Server is working properly!',
+    timestamp,
+    environment: process.env.NODE_ENV || 'development'
+  });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log('Firebase status:', {
+    initialized: firebaseInitialized,
+    appsLength: admin.apps.length
+  });
 }); 
