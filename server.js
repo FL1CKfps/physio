@@ -100,7 +100,7 @@ app.get('/auth/google/init', (req, res) => {
   res.json({ authUrl });
 });
 
-// Handle OAuth callback - add Firebase check middleware
+// Handle OAuth callback without Firebase custom token
 app.get('/auth/google/callback', async (req, res) => {
   try {
     const { code } = req.query;
@@ -117,33 +117,9 @@ app.get('/auth/google/callback', async (req, res) => {
       name: userInfo.data.name
     });
 
-    // Check if Firebase is initialized before proceeding
-    if (!firebaseInitialized) {
-      throw new Error('Firebase is not initialized');
-    }
-
-    // Create or get Firebase user
-    let userRecord;
-    try {
-      userRecord = await admin.auth().getUserByEmail(userInfo.data.email);
-    } catch (error) {
-      if (error.code === 'auth/user-not-found') {
-        userRecord = await admin.auth().createUser({
-          email: userInfo.data.email,
-          displayName: userInfo.data.name,
-          photoURL: userInfo.data.picture,
-          emailVerified: true
-        });
-      } else {
-        throw error;
-      }
-    }
-
-    // Create custom token
-    const customToken = await admin.auth().createCustomToken(userRecord.uid);
-
-    // Redirect back to app with token
-    res.redirect(`physioquantum://auth/callback?token=${customToken}`);
+    // Instead of Firebase custom token, pass the Google ID token directly
+    // The client can use this to sign in with Firebase's signInWithCredential
+    res.redirect(`physioquantum://auth/callback?token=${tokens.id_token}&email=${encodeURIComponent(userInfo.data.email)}&name=${encodeURIComponent(userInfo.data.name)}`);
   } catch (error) {
     console.error('OAuth callback error:', error);
     res.redirect('physioquantum://auth/callback?error=Authentication failed');
