@@ -36,20 +36,25 @@ app.use((req, res, next) => {
 
 // Initialize OAuth client
 const oauth2Client = new OAuth2Client({
-  clientId: '542246894154-fgfa3e4b3maonkftkvkd1lvrueda7iop.apps.googleusercontent.com',
+  clientId: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  redirectUri: 'http://192.168.1.8:3000/auth/google/callback'
+  redirectUri: 'https://physio-j6ja.onrender.com/auth/google/callback'
 });
 
 // Initialize OAuth flow
 app.get('/auth/google/init', (req, res) => {
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: 'offline',
+    prompt: 'consent', // Force consent screen
     scope: [
       'https://www.googleapis.com/auth/userinfo.profile',
       'https://www.googleapis.com/auth/userinfo.email'
-    ]
+    ],
+    // Add state parameter for security
+    state: Math.random().toString(36).substring(7)
   });
+  
+  console.log('Generated Auth URL:', authUrl); // Debug log
   res.json({ authUrl });
 });
 
