@@ -17,6 +17,9 @@ let firebaseInitialized = false;
 try {
   console.log('Starting Firebase initialization...');
   
+  // Log server time for debugging
+  console.log('Server time:', new Date().toISOString());
+  
   // Import service account file directly
   const serviceAccountPath = new URL('./service-account-key.json', import.meta.url);
   
@@ -98,7 +101,7 @@ app.get('/auth/google/init', (req, res) => {
 });
 
 // Handle OAuth callback - add Firebase check middleware
-app.get('/auth/google/callback', checkFirebase, async (req, res) => {
+app.get('/auth/google/callback', async (req, res) => {
   try {
     const { code } = req.query;
     const { tokens } = await oauth2Client.getToken(code);
@@ -108,6 +111,16 @@ app.get('/auth/google/callback', checkFirebase, async (req, res) => {
     const userInfo = await oauth2Client.request({
       url: 'https://www.googleapis.com/oauth2/v2/userinfo'
     });
+
+    console.log('User authenticated:', {
+      email: userInfo.data.email,
+      name: userInfo.data.name
+    });
+
+    // Check if Firebase is initialized before proceeding
+    if (!firebaseInitialized) {
+      throw new Error('Firebase is not initialized');
+    }
 
     // Create or get Firebase user
     let userRecord;
