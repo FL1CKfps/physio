@@ -24,51 +24,16 @@ try {
     clientEmailExists: !!process.env.FIREBASE_CLIENT_EMAIL
   });
 
-  // Parse and format private key
-  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-  if (!privateKey) {
-    throw new Error('FIREBASE_PRIVATE_KEY environment variable is missing');
-  }
-
-  // Handle different formats of the private key
-  if (privateKey.includes('\\n')) {
-    privateKey = privateKey.replace(/\\n/g, '\n');
-  }
-
-  // Remove quotes if they exist (common when set in environment variables)
-  if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
-    privateKey = privateKey.slice(1, -1);
-  }
-
-  // Clean up any extra newlines that might be causing issues
-  privateKey = privateKey
-    .replace(/-----BEGIN PRIVATE KEY-----\s+/g, '-----BEGIN PRIVATE KEY-----\n')
-    .replace(/\s+-----END PRIVATE KEY-----/g, '\n-----END PRIVATE KEY-----')
-    .replace(/\n\s+/g, '\n')  // Remove extra whitespace after newlines
-    .replace(/\s+\n/g, '\n')  // Remove extra whitespace before newlines
-    .replace(/\n\n+/g, '\n'); // Replace multiple newlines with single newlines
-
-  // Log private key format for debugging (first and last few characters)
-  console.log('Private key format check:', {
-    start: privateKey.substring(0, 50),
-    end: privateKey.substring(privateKey.length - 50),
-    containsHeaders: privateKey.includes('BEGIN PRIVATE KEY') && privateKey.includes('END PRIVATE KEY'),
-    length: privateKey.length,
-    hasProperFormat: privateKey.startsWith('-----BEGIN PRIVATE KEY-----\n') && 
-                    privateKey.endsWith('\n-----END PRIVATE KEY-----')
-  });
-
+  // Use hardcoded service account for testing
   const serviceAccount = {
     type: 'service_account',
-    project_id: process.env.FIREBASE_PROJECT_ID,
-    private_key: privateKey,
-    client_email: process.env.FIREBASE_CLIENT_EMAIL,
+    project_id: 'assistant-df14d',
+    private_key: '-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC81u+kQcTXMBSu\nxu609NpoQEzUT49+y8dXolDfYWDLwdSUtNwDTfB/lxsqMT9+PfMI81ZeC9qzEPRU\nffNzDzyxvBYk90ZWOTJQpu+ZnL7mIYTgO4V5F4GnxGSX2RIr8W/dfzDoaT5wj9HF\nY9AleCDBntGaxMJlh+XQEGKeBhdOK6fNf2gNbaxaCcPUyQb/y1drVyT4mgaTuzAU\nnnEftjtyCsXlCC9DjhrOe47RILjgYkEWpJx8bqbaYUBVW1Nga2cu6bLxUyebOvMKB\nDwOilDP65TQBLsEwDLtQ1xZZota/+t2xdASVOH7J5cIp/G/Z+M2pE33yroqEjHC/\nwRrJXex/AgMBAAECggEAByIJSEeRs10mEtoBz0UGcPSo0kY1EeGJpJZFfsKTYO7v\n5DQWsWtCv9cJ2CSnFNIrOXXTl9bTynrD9+MQDJMRRFdp8LiEaCJd86zylPdWQKQY\nfE3TQ1kvdRJWiGPTK2TByHiS9Nxw1tif4FheVuP8PMQOf82Z2DLza9IKn5R0UegE\noHgLYzSayEQXEnyrMerNWeZ6PeiXGhxnFGY+1ZX+66SE8HoCFgvuUWJCYhjhFQAM\nA79D97L+zkHoUDAIOJXtSXW65CM+2Fd03Uug+cGovPmKtnhGDsIBFsYqYfMqh0UZ\ncijiLKZLGrEy+MPysdQWAvxaCx1JeK8OvwuhDNKHsQKBgQDY5EL+lWe0PvlLDFan\niyD4o0PYUygXklTXi7TAuX0Q4nzeCU8qrLvlsLkibh3Su6O8s5w7UTEXwAkikYkS\nnoHmUeufarHUY3Z7rDJVHnPRLzARU7B2Vy3B09mRQLCxB+TXiFxZunXJ2NbVaet5J\nvvsSDBAO8i9Ic+5jN3fTojGYsQKBgQDe48n/9hXK7Wulwob8K4AzleLIppmXcfcA\nZTFx0HK+r09hxqAnAoPTOTyJO0wZQ14U2N44Bln1OHs3bWkZOxJOlF44YiavEF4x\n96f75EKGcY0WTcpujonHl2Jd7MXmyjh5K/1F+WE7GQtDPAbijEBmPPTZavqR2fXb\nrSqAp+okLwKBgQCU5G5RUsN0a1679GZwcgRaa8ohcUSumdgAeHnHbA69Tp4l1wIv\n65C5543QYwO6LPIEktCHr/8hrMUYpAwTa3LLSWxtI8LnJQz5kxPPq6HRfubiXY0Z\nziUPRi4rE4f2alxhLzRJD3EKUWiECqEawy6cfwdvGzb2aA+YsPVjpY6ioQKBgCso\njGqlqd6bTmbQXfbiLXbPpRQZPlBW3u8SqRpStIU7yPEz1rr2/7Oct54S/088/jCn\nNZA/mpejEijPZLRf/dF9ZSkhyD/JuZOPUtWxgzgpMJqLAZGaxA8DvyZUvJVNvtWn\nsOklurAIz2d7bhHb+nRRhU+8KTyoqbSZuUskOHA9AoGBAMMV0tFJYkYntWShAlKs\nYEV073QTnjpSDqxVe8KRWteIxqXu8b0ZCExF0q8OJVWY6aEon78UNflqWa/dfc5j\nzsfEVKhPLOiIBPUxUWMyg+nduAVRGR5LaU2q8CkjjIzpKvg6ppNcMpsYYNtqncB8\n5s9GvQX6UXmHqPDrdy80e8+9\n-----END PRIVATE KEY-----',
+    client_email: 'firebase-adminsdk-aa2fx@assistant-df14d.iam.gserviceaccount.com',
   };
 
-  // Validate service account
-  if (!serviceAccount.project_id || !serviceAccount.private_key || !serviceAccount.client_email) {
-    throw new Error('Missing required service account fields');
-  }
+  // Log private key format for debugging (first and last few characters)
+  console.log('Using hardcoded service account for testing');
 
   // Check if Firebase is already initialized
   if (!admin.apps.length) {
@@ -91,18 +56,6 @@ try {
   // More detailed error logging
   if (error.message.includes('private key')) {
     console.error('Private key validation failed. Please check the format.');
-    try {
-      const privateKey = process.env.FIREBASE_PRIVATE_KEY;
-      console.log('Private key debug:', {
-        length: privateKey?.length,
-        hasNewlines: privateKey?.includes('\n'),
-        hasEscapedNewlines: privateKey?.includes('\\n'),
-        startsWith: privateKey?.substring(0, 50),
-        endsWith: privateKey?.substring(privateKey.length - 50)
-      });
-    } catch (e) {
-      console.error('Error while debugging private key:', e);
-    }
   }
   
   firebaseInitialized = false;
