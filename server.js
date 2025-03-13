@@ -5,6 +5,7 @@ import admin from 'firebase-admin';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import fetch from 'node-fetch';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -80,7 +81,7 @@ app.use((req, res, next) => {
 const oauth2Client = new OAuth2Client({
   clientId: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  redirectUri: 'https://assistant-df14d.firebaseapp.com/__/auth/handler'
+  redirectUri: process.env.REDIRECT_URI
 });
 
 // Initialize OAuth flow
@@ -122,13 +123,14 @@ app.get('/auth/google/callback', async (req, res) => {
 
     // Get user info
     console.log('Fetching user info from Google...');
-    const userInfo = await oauth2Client.request({
+    const userInfoResponse = await oauth2Client.request({
       url: 'https://www.googleapis.com/oauth2/v2/userinfo'
     });
+    const userInfo = userInfoResponse.data;
 
     console.log('User authenticated:', {
-      email: userInfo.data.email,
-      name: userInfo.data.name
+      email: userInfo.email,
+      name: userInfo.name
     });
 
     // Check if Firebase is initialized before proceeding
@@ -142,14 +144,14 @@ app.get('/auth/google/callback', async (req, res) => {
       console.log('Creating or getting Firebase user...');
       let userRecord;
       try {
-        userRecord = await admin.auth().getUserByEmail(userInfo.data.email);
+        userRecord = await admin.auth().getUserByEmail(userInfo.email);
         console.log('Existing user found:', userRecord.uid);
       } catch (error) {
         if (error.code === 'auth/user-not-found') {
           userRecord = await admin.auth().createUser({
-            email: userInfo.data.email,
-            displayName: userInfo.data.name,
-            photoURL: userInfo.data.picture,
+            email: userInfo.email,
+            displayName: userInfo.name,
+            photoURL: userInfo.picture,
             emailVerified: true
           });
           console.log('New user created:', userRecord.uid);
@@ -165,13 +167,13 @@ app.get('/auth/google/callback', async (req, res) => {
 
       // Redirect back to app with token
       console.log('Redirecting to app with custom token...');
-      res.redirect(`physioquantum://auth/callback?token=${customToken}&email=${encodeURIComponent(userInfo.data.email)}&name=${encodeURIComponent(userInfo.data.name)}`);
+      res.redirect(`physioquantum://auth/callback?token=${customToken}&email=${encodeURIComponent(userInfo.email)}&name=${encodeURIComponent(userInfo.name)}`);
     } catch (firebaseError) {
       console.error('Firebase operation failed:', firebaseError);
       
       // Fall back to Google ID token if Firebase fails
       console.log('Falling back to Google ID token...');
-      res.redirect(`physioquantum://auth/callback?token=${tokens.id_token}&email=${encodeURIComponent(userInfo.data.email)}&name=${encodeURIComponent(userInfo.data.name)}&provider=google`);
+      res.redirect(`physioquantum://auth/callback?token=${tokens.id_token}&email=${encodeURIComponent(userInfo.email)}&name=${encodeURIComponent(userInfo.name)}&provider=google`);
     }
   } catch (error) {
     console.error('OAuth callback error:', error);
