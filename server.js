@@ -13,19 +13,30 @@ app.use(express.json());
 const serviceAccount = {
   type: 'service_account',
   project_id: process.env.FIREBASE_PROJECT_ID,
-  private_key: process.env.FIREBASE_PRIVATE_KEY,
+  // replace `\` and `n` character pairs w/ single `\n` character
+  private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
   client_email: process.env.FIREBASE_CLIENT_EMAIL,
 };
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
-
-// Add error handling for Firebase initialization
-admin.app().firestore().settings({ ignoreUndefinedProperties: true });
-
-// Log successful initialization
-console.log('Firebase Admin initialized with project:', admin.app().name);
+// Add error handling for initialization
+try {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+  
+  // Add error handling for Firebase initialization
+  admin.app().firestore().settings({ ignoreUndefinedProperties: true });
+  
+  // Log successful initialization
+  console.log('Firebase Admin initialized with project:', admin.app().name);
+} catch (error) {
+  console.error('Firebase initialization error:', error);
+  console.log('Service account used:', {
+    project_id: serviceAccount.project_id,
+    client_email: serviceAccount.client_email,
+    private_key_length: serviceAccount.private_key?.length
+  });
+}
 
 // Initialize Google OAuth client
 const client = new OAuth2Client([
