@@ -9,13 +9,19 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize Firebase Admin
-const serviceAccount = require('./service-account-key.json');
+// Initialize Firebase Admin with environment variables
+const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT 
+  ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
+  : require('./service-account-key.json');
+
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 
-// Add this after initializing Firebase Admin
+// Add error handling for Firebase initialization
+admin.app().firestore().settings({ ignoreUndefinedProperties: true });
+
+// Log successful initialization
 console.log('Firebase Admin initialized with project:', admin.app().name);
 
 // Initialize Google OAuth client
