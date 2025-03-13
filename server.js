@@ -26,14 +26,39 @@ try {
 
   // Parse and format private key
   let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+  if (!privateKey) {
+    throw new Error('FIREBASE_PRIVATE_KEY environment variable is missing');
+  }
+
+  // Handle different formats of the private key
   if (privateKey.includes('\\n')) {
     privateKey = privateKey.replace(/\\n/g, '\n');
   }
-  
-  // Remove quotes if they exist
+
+  // Remove quotes if they exist (common when set in environment variables)
   if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
     privateKey = privateKey.slice(1, -1);
   }
+
+  // Ensure the key has proper BEGIN/END markers
+  if (!privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
+    privateKey = `-----BEGIN PRIVATE KEY-----\n${privateKey}\n-----END PRIVATE KEY-----`;
+  } else {
+    // Make sure there are newlines after BEGIN and before END markers
+    privateKey = privateKey
+      .replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n')
+      .replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----');
+  }
+
+  // Log private key format for debugging (first and last few characters)
+  console.log('Private key format check:', {
+    start: privateKey.substring(0, 50),
+    end: privateKey.substring(privateKey.length - 50),
+    containsHeaders: privateKey.includes('BEGIN PRIVATE KEY') && privateKey.includes('END PRIVATE KEY'),
+    length: privateKey.length,
+    hasProperFormat: privateKey.startsWith('-----BEGIN PRIVATE KEY-----\n') && 
+                    privateKey.endsWith('\n-----END PRIVATE KEY-----')
+  });
 
   const serviceAccount = {
     type: 'service_account',
@@ -46,14 +71,6 @@ try {
   if (!serviceAccount.project_id || !serviceAccount.private_key || !serviceAccount.client_email) {
     throw new Error('Missing required service account fields');
   }
-
-  // Log private key format for debugging (first and last few characters)
-  console.log('Private key format check:', {
-    start: privateKey.substring(0, 50),
-    end: privateKey.substring(privateKey.length - 50),
-    containsHeaders: privateKey.includes('BEGIN PRIVATE KEY') && privateKey.includes('END PRIVATE KEY'),
-    length: privateKey.length
-  });
 
   // Check if Firebase is already initialized
   if (!admin.apps.length) {
