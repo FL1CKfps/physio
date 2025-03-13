@@ -16,18 +16,44 @@ let firebaseInitialized = false;
 
 try {
   console.log('Starting Firebase initialization...');
+  
+  // Log environment variables status
   console.log('Environment variables check:', {
     projectId: !!process.env.FIREBASE_PROJECT_ID,
     privateKeyExists: !!process.env.FIREBASE_PRIVATE_KEY,
     clientEmailExists: !!process.env.FIREBASE_CLIENT_EMAIL
   });
 
+  // Parse and format private key
+  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+  if (privateKey.includes('\\n')) {
+    privateKey = privateKey.replace(/\\n/g, '\n');
+  }
+  
+  // Remove quotes if they exist
+  if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+    privateKey = privateKey.slice(1, -1);
+  }
+
   const serviceAccount = {
     type: 'service_account',
     project_id: process.env.FIREBASE_PROJECT_ID,
-    private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    private_key: privateKey,
     client_email: process.env.FIREBASE_CLIENT_EMAIL,
   };
+
+  // Validate service account
+  if (!serviceAccount.project_id || !serviceAccount.private_key || !serviceAccount.client_email) {
+    throw new Error('Missing required service account fields');
+  }
+
+  // Log private key format for debugging (first and last few characters)
+  console.log('Private key format check:', {
+    start: privateKey.substring(0, 50),
+    end: privateKey.substring(privateKey.length - 50),
+    containsHeaders: privateKey.includes('BEGIN PRIVATE KEY') && privateKey.includes('END PRIVATE KEY'),
+    length: privateKey.length
+  });
 
   // Check if Firebase is already initialized
   if (!admin.apps.length) {
@@ -46,11 +72,24 @@ try {
 } catch (error) {
   console.error('Firebase initialization error:', error);
   console.error('Error stack:', error.stack);
-  console.log('Service account details:', {
-    project_id: process.env.FIREBASE_PROJECT_ID,
-    client_email: process.env.FIREBASE_CLIENT_EMAIL,
-    private_key_length: process.env.FIREBASE_PRIVATE_KEY?.length
-  });
+  
+  // More detailed error logging
+  if (error.message.includes('private key')) {
+    console.error('Private key validation failed. Please check the format.');
+    try {
+      const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+      console.log('Private key debug:', {
+        length: privateKey?.length,
+        hasNewlines: privateKey?.includes('\n'),
+        hasEscapedNewlines: privateKey?.includes('\\n'),
+        startsWith: privateKey?.substring(0, 50),
+        endsWith: privateKey?.substring(privateKey.length - 50)
+      });
+    } catch (e) {
+      console.error('Error while debugging private key:', e);
+    }
+  }
+  
   firebaseInitialized = false;
 }
 
