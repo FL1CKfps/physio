@@ -5,38 +5,52 @@ const admin = require('firebase-admin');
 const { google } = require('googleapis');
 require('dotenv').config();
 
+// Initialize Firebase Admin first, before creating the Express app
+try {
+  const serviceAccount = {
+    type: 'service_account',
+    project_id: process.env.FIREBASE_PROJECT_ID,
+    private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    client_email: process.env.FIREBASE_CLIENT_EMAIL,
+  };
+
+  // Initialize Firebase before anything else
+  if (!admin.apps.length) {
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+
+    // Configure Firestore
+    admin.app().firestore().settings({ 
+      ignoreUndefinedProperties: true 
+    });
+
+    console.log('Firebase Admin initialized with project:', admin.app().name);
+  }
+} catch (error) {
+  console.error('Firebase initialization error:', error);
+  console.log('Service account used:', {
+    project_id: process.env.FIREBASE_PROJECT_ID,
+    client_email: process.env.FIREBASE_CLIENT_EMAIL,
+    private_key_length: process.env.FIREBASE_PRIVATE_KEY?.length
+  });
+  // Don't exit, but mark Firebase as unavailable
+  global.firebaseInitialized = false;
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize Firebase Admin
-const serviceAccount = {
-  type: 'service_account',
-  project_id: process.env.FIREBASE_PROJECT_ID,
-  // replace `\` and `n` character pairs w/ single `\n` character
-  private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-  client_email: process.env.FIREBASE_CLIENT_EMAIL,
+// Add Firebase availability check middleware
+const checkFirebase = (req, res, next) => {
+  if (!admin.apps.length) {
+    return res.status(500).json({ 
+      error: 'Firebase services are not available' 
+    });
+  }
+  next();
 };
-
-// Add error handling for initialization
-try {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-  });
-  
-  // Add error handling for Firebase initialization
-  admin.app().firestore().settings({ ignoreUndefinedProperties: true });
-  
-  // Log successful initialization
-  console.log('Firebase Admin initialized with project:', admin.app().name);
-} catch (error) {
-  console.error('Firebase initialization error:', error);
-  console.log('Service account used:', {
-    project_id: serviceAccount.project_id,
-    client_email: serviceAccount.client_email,
-    private_key_length: serviceAccount.private_key?.length
-  });
-}
 
 // Initialize Google OAuth client
 const client = new OAuth2Client([
@@ -78,8 +92,8 @@ app.get('/auth/google/init', (req, res) => {
   res.json({ authUrl });
 });
 
-// Handle OAuth callback
-app.get('/auth/google/callback', async (req, res) => {
+// Handle OAuth callback - add Firebase check middleware
+app.get('/auth/google/callback', checkFirebase, async (req, res) => {
   try {
     const { code } = req.query;
     const { tokens } = await oauth2Client.getToken(code);
@@ -139,4 +153,5 @@ app.get('/api/test', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log('Firebase status:', admin.apps.length ? 'Initialized' : 'Not initialized');
 }); 
