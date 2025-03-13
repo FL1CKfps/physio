@@ -76,15 +76,18 @@ app.use((req, res, next) => {
   next();
 });
 
-// Initialize OAuth client
+// Initialize OAuth client with exact redirect URI
 const oauth2Client = new OAuth2Client({
   clientId: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  redirectUri: 'https://physio-j6ja.onrender.com/auth/google/callback'
+  redirectUri: process.env.REDIRECT_URI // Make sure this matches exactly what's in Google Cloud Console
 });
 
 // Initialize OAuth flow
 app.get('/auth/google/init', (req, res) => {
+  // Log the redirect URI for debugging
+  console.log('Using redirect URI:', process.env.REDIRECT_URI);
+  
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent', // Force consent screen
@@ -93,7 +96,9 @@ app.get('/auth/google/init', (req, res) => {
       'https://www.googleapis.com/auth/userinfo.email'
     ],
     // Add state parameter for security
-    state: Math.random().toString(36).substring(7)
+    state: Math.random().toString(36).substring(7),
+    // Explicitly include the redirect URI to ensure it matches
+    redirect_uri: process.env.REDIRECT_URI
   });
   
   console.log('Generated Auth URL:', authUrl); // Debug log
