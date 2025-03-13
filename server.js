@@ -76,17 +76,17 @@ app.use((req, res, next) => {
   next();
 });
 
-// Initialize OAuth client with exact redirect URI
+// Initialize OAuth client with Firebase Auth Handler as redirect URI
 const oauth2Client = new OAuth2Client({
   clientId: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  redirectUri: process.env.REDIRECT_URI // Make sure this matches exactly what's in Google Cloud Console
+  redirectUri: 'https://assistant-df14d.firebaseapp.com/__/auth/handler'
 });
 
 // Initialize OAuth flow
 app.get('/auth/google/init', (req, res) => {
   // Log the redirect URI for debugging
-  console.log('Using redirect URI:', process.env.REDIRECT_URI);
+  console.log('Using Firebase Auth Handler as redirect URI');
   
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: 'offline',
@@ -97,22 +97,30 @@ app.get('/auth/google/init', (req, res) => {
     ],
     // Add state parameter for security
     state: Math.random().toString(36).substring(7),
-    // Explicitly include the redirect URI to ensure it matches
-    redirect_uri: process.env.REDIRECT_URI
+    // Include the app's custom scheme URI as the final redirect destination
+    redirect_uri: 'https://assistant-df14d.firebaseapp.com/__/auth/handler'
   });
   
-  console.log('Generated Auth URL:', authUrl); // Debug log
+  console.log('Generated Auth URL:', authUrl);
   res.json({ authUrl });
 });
 
-// Handle OAuth callback without Firebase custom token
+// Handle OAuth callback with Firebase custom token
 app.get('/auth/google/callback', async (req, res) => {
   try {
     const { code } = req.query;
+    
+    if (!code) {
+      console.error('No authorization code received from Google');
+      return res.redirect('physioquantum://auth/callback?error=No authorization code received');
+    }
+    
+    console.log('Exchanging authorization code for tokens...');
     const { tokens } = await oauth2Client.getToken(code);
     oauth2Client.setCredentials(tokens);
 
     // Get user info
+    console.log('Fetching user info from Google...');
     const userInfo = await oauth2Client.request({
       url: 'https://www.googleapis.com/oauth2/v2/userinfo'
     });
@@ -122,12 +130,57 @@ app.get('/auth/google/callback', async (req, res) => {
       name: userInfo.data.name
     });
 
-    // Instead of Firebase custom token, pass the Google ID token directly
-    // The client can use this to sign in with Firebase's signInWithCredential
-    res.redirect(`physioquantum://auth/callback?token=${tokens.id_token}&email=${encodeURIComponent(userInfo.data.email)}&name=${encodeURIComponent(userInfo.data.name)}`);
+    // Check if Firebase is initialized before proceeding
+    if (!firebaseInitialized) {
+      console.error('Firebase is not initialized');
+      return res.redirect('physioquantum://auth/callback?error=Firebase services unavailable');
+    }
+
+    try {
+      // Create or get Firebase user
+      console.log('Creating or getting Firebase user...');
+      let userRecord;
+      try {
+        userRecord = await admin.auth().getUserByEmail(userInfo.data.email);
+        console.log('Existing user found:', userRecord.uid);
+      } catch (error) {
+        if (error.code === 'auth/user-not-found') {
+          userRecord = await admin.auth().createUser({
+            email: userInfo.data.email,
+            displayName: userInfo.data.name,
+            photoURL: userInfo.data.picture,
+            emailVerified: true
+          });
+          console.log('New user created:', userRecord.uid);
+        } else {
+          throw error;
+        }
+      }
+
+      // Create custom token
+      console.log('Creating Firebase custom token...');
+      const customToken = await admin.auth().createCustomToken(userRecord.uid);
+      console.log('Custom token created successfully');
+
+      // Redirect back to app with token
+      console.log('Redirecting to app with custom token...');
+      res.redirect(`physioquantum://auth/callback?token=${customToken}&email=${encodeURIComponent(userInfo.data.email)}&name=${encodeURIComponent(userInfo.data.name)}`);
+    } catch (firebaseError) {
+      console.error('Firebase operation failed:', firebaseError);
+      
+      // Fall back to Google ID token if Firebase fails
+      console.log('Falling back to Google ID token...');
+      res.redirect(`physioquantum://auth/callback?token=${tokens.id_token}&email=${encodeURIComponent(userInfo.data.email)}&name=${encodeURIComponent(userInfo.data.name)}&provider=google`);
+    }
   } catch (error) {
     console.error('OAuth callback error:', error);
-    res.redirect('physioquantum://auth/callback?error=Authentication failed');
+    
+    // More detailed error logging
+    if (error.response) {
+      console.error('Error response:', error.response.data);
+    }
+    
+    res.redirect(`physioquantum://auth/callback?error=${encodeURIComponent(error.message || 'Authentication failed')}`);
   }
 });
 
@@ -153,6 +206,33 @@ app.get('/api/test', (req, res) => {
     timestamp,
     environment: process.env.NODE_ENV || 'development'
   });
+});
+
+// Add a proxy endpoint for Firebase auth
+app.all('/__/auth/*', async (req, res) => {
+  const targetUrl = `https://assistant-df14d.firebaseapp.com/__/auth/${req.params[0]}`;
+  console.log(`Proxying request to: ${targetUrl}`);
+  
+  // Forward the request to Firebase
+  try {
+    const response = await fetch(targetUrl, {
+      method: req.method,
+      headers: req.headers,
+      body: req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined
+    });
+    
+    // Forward the response back to the client
+    res.status(response.status);
+    for (const [key, value] of response.headers.entries()) {
+      res.setHeader(key, value);
+    }
+    
+    const body = await response.text();
+    res.send(body);
+  } catch (error) {
+    console.error('Proxy error:', error);
+    res.status(500).send('Proxy error');
+  }
 });
 
 const PORT = process.env.PORT || 3000;
