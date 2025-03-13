@@ -28,22 +28,12 @@ try {
       credential: admin.credential.cert(serviceAccountPath.pathname)
     });
     
-    // Test the connection
-    await admin.app().firestore().collection('test').doc('test').set({
-      timestamp: admin.firestore.FieldValue.serverTimestamp()
-    });
-    
     console.log('Firebase Admin initialized successfully');
     firebaseInitialized = true;
   }
 } catch (error) {
   console.error('Firebase initialization error:', error);
   console.error('Error stack:', error.stack);
-  
-  // More detailed error logging
-  if (error.message.includes('private key')) {
-    console.error('Private key validation failed. Please check the format.');
-  }
   
   firebaseInitialized = false;
 }
