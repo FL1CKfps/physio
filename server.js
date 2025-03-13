@@ -6,7 +6,16 @@ const { google } = require('googleapis');
 require('dotenv').config();
 
 // Initialize Firebase Admin first, before creating the Express app
+let firebaseInitialized = false;
+
 try {
+  console.log('Starting Firebase initialization...');
+  console.log('Environment variables check:', {
+    projectId: !!process.env.FIREBASE_PROJECT_ID,
+    privateKeyExists: !!process.env.FIREBASE_PRIVATE_KEY,
+    clientEmailExists: !!process.env.FIREBASE_CLIENT_EMAIL
+  });
+
   const serviceAccount = {
     type: 'service_account',
     project_id: process.env.FIREBASE_PROJECT_ID,
@@ -14,10 +23,20 @@ try {
     client_email: process.env.FIREBASE_CLIENT_EMAIL,
   };
 
+  // Validate service account
+  if (!serviceAccount.project_id || !serviceAccount.private_key || !serviceAccount.client_email) {
+    throw new Error('Missing required service account fields');
+  }
+
   // Initialize Firebase before anything else
   if (!admin.apps.length) {
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
+    });
+
+    // Test Firebase connection
+    await admin.app().firestore().collection('test').doc('test').set({
+      timestamp: admin.firestore.FieldValue.serverTimestamp()
     });
 
     // Configure Firestore
@@ -25,17 +44,19 @@ try {
       ignoreUndefinedProperties: true 
     });
 
-    console.log('Firebase Admin initialized with project:', admin.app().name);
+    console.log('Firebase Admin initialized successfully with project:', admin.app().name);
+    firebaseInitialized = true;
   }
 } catch (error) {
   console.error('Firebase initialization error:', error);
-  console.log('Service account used:', {
+  console.error('Error stack:', error.stack);
+  console.log('Service account details:', {
     project_id: process.env.FIREBASE_PROJECT_ID,
     client_email: process.env.FIREBASE_CLIENT_EMAIL,
+    private_key_preview: process.env.FIREBASE_PRIVATE_KEY?.substring(0, 50) + '...',
     private_key_length: process.env.FIREBASE_PRIVATE_KEY?.length
   });
-  // Don't exit, but mark Firebase as unavailable
-  global.firebaseInitialized = false;
+  firebaseInitialized = false;
 }
 
 const app = express();
@@ -44,9 +65,14 @@ app.use(express.json());
 
 // Add Firebase availability check middleware
 const checkFirebase = (req, res, next) => {
-  if (!admin.apps.length) {
-    return res.status(500).json({ 
-      error: 'Firebase services are not available' 
+  if (!firebaseInitialized || !admin.apps.length) {
+    console.error('Firebase check failed:', {
+      firebaseInitialized,
+      appsLength: admin.apps.length
+    });
+    return res.status(503).json({ 
+      error: 'Firebase services are temporarily unavailable',
+      details: 'Server configuration issue - please try again later'
     });
   }
   next();
@@ -132,9 +158,15 @@ app.get('/auth/google/callback', checkFirebase, async (req, res) => {
   }
 });
 
-// Health check endpoint
+// Health check endpoint with Firebase status
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ 
+    status: 'ok',
+    firebase: {
+      initialized: firebaseInitialized,
+      appsLength: admin.apps.length
+    }
+  });
 });
 
 // Add a test endpoint
@@ -153,5 +185,8 @@ app.get('/api/test', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log('Firebase status:', admin.apps.length ? 'Initialized' : 'Not initialized');
+  console.log('Firebase status:', {
+    initialized: firebaseInitialized,
+    appsLength: admin.apps.length
+  });
 }); 
