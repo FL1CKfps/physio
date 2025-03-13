@@ -85,8 +85,9 @@ const oauth2Client = new OAuth2Client({
 
 // Initialize OAuth flow
 app.get('/auth/google/init', (req, res) => {
-  // Log the redirect URI for debugging
-  console.log('Using Firebase Auth Handler as redirect URI');
+  // Get the redirect URI from the request
+  const redirectUri = req.query.redirect_uri || 'https://assistant-df14d.firebaseapp.com/__/auth/handler';
+  console.log('Using redirect URI:', redirectUri);
   
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: 'offline',
@@ -97,8 +98,8 @@ app.get('/auth/google/init', (req, res) => {
     ],
     // Add state parameter for security
     state: Math.random().toString(36).substring(7),
-    // Include the app's custom scheme URI as the final redirect destination
-    redirect_uri: 'https://assistant-df14d.firebaseapp.com/__/auth/handler'
+    // Use the redirect URI from the request
+    redirect_uri: redirectUri
   });
   
   console.log('Generated Auth URL:', authUrl);
