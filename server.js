@@ -1,21 +1,22 @@
-const express = require('express');
-const cors = require('cors');
-const { OAuth2Client } = require('google-auth-library');
-const admin = require('firebase-admin');
-const { google } = require('googleapis');
-require('dotenv').config();
+import express from 'express';
+import cors from 'cors';
+import { OAuth2Client } from 'google-auth-library';
+import admin from 'firebase-admin';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
-// Initialize Firebase Admin first, before creating the Express app
-let firebaseInitialized = false;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
+dotenv.config();
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// Initialize Firebase Admin
 try {
-  console.log('Starting Firebase initialization...');
-  console.log('Environment variables check:', {
-    projectId: !!process.env.FIREBASE_PROJECT_ID,
-    privateKeyExists: !!process.env.FIREBASE_PRIVATE_KEY,
-    clientEmailExists: !!process.env.FIREBASE_CLIENT_EMAIL
-  });
-
   const serviceAccount = {
     type: 'service_account',
     project_id: process.env.FIREBASE_PROJECT_ID,
@@ -23,76 +24,12 @@ try {
     client_email: process.env.FIREBASE_CLIENT_EMAIL,
   };
 
-  // Validate service account
-  if (!serviceAccount.project_id || !serviceAccount.private_key || !serviceAccount.client_email) {
-    throw new Error('Missing required service account fields');
-  }
-
-  // Initialize Firebase before anything else
-  if (!admin.apps.length) {
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
-    });
-
-    // Test Firebase connection
-    await admin.app().firestore().collection('test').doc('test').set({
-      timestamp: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    // Configure Firestore
-    admin.app().firestore().settings({ 
-      ignoreUndefinedProperties: true 
-    });
-
-    console.log('Firebase Admin initialized successfully with project:', admin.app().name);
-    firebaseInitialized = true;
-  }
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
 } catch (error) {
   console.error('Firebase initialization error:', error);
-  console.error('Error stack:', error.stack);
-  console.log('Service account details:', {
-    project_id: process.env.FIREBASE_PROJECT_ID,
-    client_email: process.env.FIREBASE_CLIENT_EMAIL,
-    private_key_preview: process.env.FIREBASE_PRIVATE_KEY?.substring(0, 50) + '...',
-    private_key_length: process.env.FIREBASE_PRIVATE_KEY?.length
-  });
-  firebaseInitialized = false;
 }
-
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-// Add Firebase availability check middleware
-const checkFirebase = (req, res, next) => {
-  if (!firebaseInitialized || !admin.apps.length) {
-    console.error('Firebase check failed:', {
-      firebaseInitialized,
-      appsLength: admin.apps.length
-    });
-    return res.status(503).json({ 
-      error: 'Firebase services are temporarily unavailable',
-      details: 'Server configuration issue - please try again later'
-    });
-  }
-  next();
-};
-
-// Initialize Google OAuth client
-const client = new OAuth2Client([
-  process.env.GOOGLE_CLIENT_ID, 
-  process.env.ANDROID_CLIENT_ID,
-  process.env.WEB_CLIENT_ID
-]);
-
-// Add more detailed logging middleware
-app.use((req, res, next) => {
-  const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] ${req.method} ${req.url}`);
-  console.log('Headers:', req.headers);
-  if (req.body) console.log('Request Body:', JSON.stringify(req.body, null, 2));
-  next();
-});
 
 // Initialize OAuth client
 const oauth2Client = new OAuth2Client({
@@ -101,25 +38,22 @@ const oauth2Client = new OAuth2Client({
   redirectUri: 'https://physio-j6ja.onrender.com/auth/google/callback'
 });
 
-// Initialize OAuth flow
+// OAuth flow initialization
 app.get('/auth/google/init', (req, res) => {
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: 'offline',
-    prompt: 'consent', // Force consent screen
+    prompt: 'consent',
     scope: [
       'https://www.googleapis.com/auth/userinfo.profile',
       'https://www.googleapis.com/auth/userinfo.email'
     ],
-    // Add state parameter for security
     state: Math.random().toString(36).substring(7)
   });
-  
-  console.log('Generated Auth URL:', authUrl); // Debug log
   res.json({ authUrl });
 });
 
-// Handle OAuth callback - add Firebase check middleware
-app.get('/auth/google/callback', checkFirebase, async (req, res) => {
+// OAuth callback
+app.get('/auth/google/callback', async (req, res) => {
   try {
     const { code } = req.query;
     const { tokens } = await oauth2Client.getToken(code);
@@ -149,8 +83,6 @@ app.get('/auth/google/callback', checkFirebase, async (req, res) => {
 
     // Create custom token
     const customToken = await admin.auth().createCustomToken(userRecord.uid);
-
-    // Redirect back to app with token
     res.redirect(`physioquantum://auth/callback?token=${customToken}`);
   } catch (error) {
     console.error('OAuth callback error:', error);
@@ -158,35 +90,12 @@ app.get('/auth/google/callback', checkFirebase, async (req, res) => {
   }
 });
 
-// Health check endpoint with Firebase status
+// Basic health check
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok',
-    firebase: {
-      initialized: firebaseInitialized,
-      appsLength: admin.apps.length
-    }
-  });
-});
-
-// Add a test endpoint
-app.get('/api/test', (req, res) => {
-  const timestamp = new Date().toISOString();
-  console.log(`Test endpoint hit at ${timestamp}`);
-  console.log('Headers:', req.headers);
-  
-  res.json({ 
-    message: 'Server is working properly!',
-    timestamp,
-    environment: process.env.NODE_ENV || 'development'
-  });
+  res.json({ status: 'ok' });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log('Firebase status:', {
-    initialized: firebaseInitialized,
-    appsLength: admin.apps.length
-  });
 }); 
