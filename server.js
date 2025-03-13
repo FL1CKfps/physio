@@ -40,15 +40,13 @@ try {
     privateKey = privateKey.slice(1, -1);
   }
 
-  // Ensure the key has proper BEGIN/END markers
-  if (!privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
-    privateKey = `-----BEGIN PRIVATE KEY-----\n${privateKey}\n-----END PRIVATE KEY-----`;
-  } else {
-    // Make sure there are newlines after BEGIN and before END markers
-    privateKey = privateKey
-      .replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n')
-      .replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----');
-  }
+  // Clean up any extra newlines that might be causing issues
+  privateKey = privateKey
+    .replace(/-----BEGIN PRIVATE KEY-----\s+/g, '-----BEGIN PRIVATE KEY-----\n')
+    .replace(/\s+-----END PRIVATE KEY-----/g, '\n-----END PRIVATE KEY-----')
+    .replace(/\n\s+/g, '\n')  // Remove extra whitespace after newlines
+    .replace(/\s+\n/g, '\n')  // Remove extra whitespace before newlines
+    .replace(/\n\n+/g, '\n'); // Replace multiple newlines with single newlines
 
   // Log private key format for debugging (first and last few characters)
   console.log('Private key format check:', {
